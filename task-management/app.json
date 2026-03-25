@@ -48,8 +48,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "d8cb995a-3405-4190-8958-4f9eaac6a7ec"
+        "projectId": "5d342b17-1f6a-482d-8264-9a2491e1033f"
       }
-    }
+    },
+    "owner": "hz202300131s-organization"
   }
 }
