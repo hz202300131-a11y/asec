@@ -1,0 +1,256 @@
+import { useForm } from "@inertiajs/react";
+import { toast } from "sonner";
+import { Loader2, Save, Info } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter
+} from "@/Components/ui/dialog";
+import { Input } from "@/Components/ui/input";
+import InputError from "@/Components/InputError";
+import { Label } from "@/Components/ui/label";
+import { Button } from "@/Components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/Components/ui/select";
+import { Textarea } from "@/Components/ui/textarea";
+
+const EditMilestone = ({ setShowEditModal, milestone, project, allMilestones = [] }) => {
+  const isMilestoneBilling = project?.billing_type === 'milestone';
+
+  // Total billing excluding THIS milestone so editing doesn't self-block
+  const otherMilestonesTotal = allMilestones
+    .filter(m => m.id !== milestone.id)
+    .reduce((sum, m) => sum + (parseFloat(m.billing_percentage) || 0), 0);
+
+  const remaining = Math.max(0, 100 - otherMilestonesTotal);
+
+  const { data, setData, put, errors, processing } = useForm({
+    name:               milestone.name               || "",
+    description:        milestone.description        || "",
+    start_date:         milestone.start_date         || "",
+    due_date:           milestone.due_date           || "",
+    billing_percentage: milestone.billing_percentage || "",
+    status:             milestone.status             || "pending",
+  });
+
+  const areAllTasksCompleted = () => {
+    const tasks = milestone.tasks || [];
+    if (tasks.length === 0) return true;
+    return tasks.every(task => task.status === 'completed');
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+
+    // Frontend billing % guard
+    if (isMilestoneBilling && data.billing_percentage) {
+      const newTotal = otherMilestonesTotal + parseFloat(data.billing_percentage);
+      if (newTotal > 100) {
+        toast.error(
+          `Total billing would reach ${newTotal.toFixed(2)}%. Only ${remaining.toFixed(2)}% available for this milestone.`
+        );
+        return;
+      }
+    }
+
+    if (data.status === 'completed' && !areAllTasksCompleted()) {
+      const incompleteTasks = (milestone.tasks || []).filter(t => t.status !== 'completed').length;
+      toast.error(`Cannot mark milestone as completed. ${incompleteTasks} task(s) still need to be completed.`);
+      return;
+    }
+
+    put(route("project-management.project-milestones.update", [project.id, milestone.id]), {
+      preserveScroll: true,
+      onSuccess: (page) => {
+        setShowEditModal(false);
+        const flash = page.props.flash;
+        if (flash && flash.error) {
+          toast.error(flash.error);
+        } else {
+          toast.success("Milestone updated successfully!");
+        }
+      },
+      onError: (errors) => {
+        if (errors?.status) {
+          toast.error(errors.status);
+        } else if (errors?.billing_percentage) {
+          toast.error(errors.billing_percentage);
+        } else {
+          toast.error("Please check the form for errors");
+        }
+      },
+    });
+  };
+
+  const inputClass = (error) =>
+    "w-full border text-sm rounded-md px-4 py-2 focus:outline-none transition-all duration-200 " +
+    (error
+      ? "border-red-500 ring-2 ring-red-400 focus:border-red-500 focus:ring-red-500"
+      : "border-zinc-300 focus:border-zinc-800 focus:ring-2 focus:ring-zinc-800");
+
+  return (
+    <Dialog open onOpenChange={setShowEditModal}>
+      <DialogContent className="w-[95vw] max-w-[500px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-zinc-800">Edit Milestone</DialogTitle>
+          <DialogDescription className="text-zinc-600">
+            Update the milestone details below.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Billing type context banner */}
+        <div className={`flex items-start gap-2 text-xs px-3 py-2 rounded-lg border ${
+          isMilestoneBilling
+            ? 'bg-blue-50 border-blue-200 text-blue-700'
+            : 'bg-amber-50 border-amber-200 text-amber-700'
+        }`}>
+          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          {isMilestoneBilling ? (
+            <span>
+              <span className="font-semibold">Milestone billing</span> — other milestones use{' '}
+              <span className="font-semibold">{otherMilestonesTotal.toFixed(2)}%</span>.{' '}
+              Up to <span className={`font-semibold ${remaining === 0 ? 'text-red-600' : ''}`}>{remaining.toFixed(2)}%</span> available for this milestone.
+            </span>
+          ) : (
+            <span>
+              <span className="font-semibold">Fixed price billing</span> — billing percentage per milestone is not applicable.
+            </span>
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4">
+          {/* Name */}
+          <div>
+            <Label className="text-zinc-800">Milestone Name <span className="text-red-500">*</span></Label>
+            <Input
+              type="text"
+              value={data.name}
+              onChange={(e) => setData("name", e.target.value)}
+              placeholder="Enter milestone name"
+              className={inputClass(errors.name)}
+            />
+            <InputError message={errors.name} />
+          </div>
+
+          {/* Description */}
+          <div>
+            <Label className="text-zinc-800">Description</Label>
+            <Textarea
+              value={data.description}
+              onChange={(e) => setData("description", e.target.value)}
+              placeholder="Enter milestone description"
+              className={inputClass(errors.description)}
+            />
+            <InputError message={errors.description} />
+          </div>
+
+          {/* Start Date */}
+          <div>
+            <Label className="text-zinc-800">Start Date</Label>
+            <Input
+              type="date"
+              value={data.start_date}
+              onChange={(e) => setData("start_date", e.target.value)}
+              min={project?.start_date || undefined}
+              max={project?.planned_end_date || undefined}
+              className={inputClass(errors.start_date)}
+            />
+            <InputError message={errors.start_date} />
+          </div>
+
+          {/* Due Date */}
+          <div>
+            <Label className="text-zinc-800">Due Date</Label>
+            <Input
+              type="date"
+              value={data.due_date}
+              onChange={(e) => setData("due_date", e.target.value)}
+              min={data.start_date || project?.start_date || undefined}
+              max={project?.planned_end_date || undefined}
+              className={inputClass(errors.due_date)}
+            />
+            <InputError message={errors.due_date} />
+          </div>
+
+          {/* Billing Percentage — only shown for milestone billing */}
+          {isMilestoneBilling && (
+            <div>
+              <Label className="text-zinc-800">
+                Billing Percentage (%)
+                <span className={`ml-1 text-xs font-normal ${remaining === 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                  — {remaining.toFixed(2)}% available
+                </span>
+              </Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                max={remaining}
+                value={data.billing_percentage}
+                onChange={(e) => setData("billing_percentage", e.target.value)}
+                placeholder="0.00"
+                className={inputClass(errors.billing_percentage)}
+              />
+              <InputError message={errors.billing_percentage} />
+            </div>
+          )}
+
+          {/* Status */}
+          <div>
+            <Label className="text-zinc-800">Status</Label>
+            <Select value={data.status} onValueChange={(value) => setData("status", value)}>
+              <SelectTrigger className={inputClass(errors.status)}>
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem
+                  value="completed"
+                  disabled={!areAllTasksCompleted()}
+                >
+                  Completed
+                  {!areAllTasksCompleted() && ' (All tasks must be completed)'}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <InputError message={errors.status} />
+            {!areAllTasksCompleted() && data.status !== 'completed' && (
+              <p className="text-xs text-gray-500 mt-1">
+                Complete all tasks to mark this milestone as completed.
+              </p>
+            )}
+          </div>
+
+          {/* Footer */}
+          <DialogFooter className="flex justify-end gap-2 mt-4 border-t pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowEditModal(false)}
+              disabled={processing}
+              className="border-gray-300 hover:bg-gray-50 transition-all duration-200"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="bg-gradient-to-r from-zinc-700 to-zinc-800 hover:from-zinc-800 hover:to-zinc-900 text-white shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              disabled={processing}
+            >
+              {processing ? (
+                <><Loader2 className="h-4 w-4 animate-spin" />Saving...</>
+              ) : (
+                <><Save size={16} />Save Changes</>
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export default EditMilestone;
