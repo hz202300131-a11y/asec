@@ -122,21 +122,28 @@ class ProjectsController extends Controller
 
         // Calculate progress + expose billing flag per project
         $projects->getCollection()->transform(function ($project) {
-            $allTasks = collect();
-            foreach ($project->milestones as $milestone) {
-                if ($milestone->tasks) {
-                    $allTasks = $allTasks->merge($milestone->tasks);
-                }
+            $totalMilestones = $project->milestones->count();
+            
+            if ($totalMilestones === 0) {
+                $project->progress_percentage = 0;
+            } else {
+                $milestoneProgress = $project->milestones->map(function ($milestone) {
+                    $tasks = $milestone->tasks ?? collect();
+                    $totalTasks = $tasks->count();
+                    
+                    if ($totalTasks === 0) {
+                        // Milestone with no tasks = 0% progress (not yet started)
+                        return 0;
+                    }
+                    
+                    $completedTasks = $tasks->where('status', 'completed')->count();
+                    return ($completedTasks / $totalTasks) * 100;
+                });
+                
+                $project->progress_percentage = round($milestoneProgress->avg(), 2);
             }
-            $totalTasks     = $allTasks->count();
-            $completedTasks = $allTasks->where('status', 'completed')->count();
-            $project->progress_percentage = $totalTasks > 0
-                ? round(($completedTasks / $totalTasks) * 100, 2)
-                : 0;
 
-            // Frontend uses this to show/hide the delete button
             $project->has_billings = $project->billings()->exists();
-
             return $project;
         });
 
@@ -164,13 +171,13 @@ class ProjectsController extends Controller
 
         // Employees with an active assignment in ANY project are excluded (rotation rule)
         // Users (contractors) are exempt — they can be on multiple projects
-        $occupiedEmployeeIds = ProjectTeam::occupied()
-            ->whereNotNull('employee_id')
-            ->pluck('employee_id')
-            ->unique()->filter()->toArray();
+        // $occupiedEmployeeIds = ProjectTeam::occupied()
+        //     ->whereNotNull('employee_id')
+        //     ->pluck('employee_id')
+        //     ->unique()->filter()->toArray();
 
         $employees = Employee::where('is_active', true)
-            ->whereNotIn('id', $occupiedEmployeeIds)
+            // ->whereNotIn('id', $occupiedEmployeeIds)
             ->orderBy('first_name')->orderBy('last_name')
             ->get(['id', 'first_name', 'last_name', 'email', 'position'])
             ->map(fn ($e) => [
@@ -379,16 +386,16 @@ class ProjectsController extends Controller
                         throw \Illuminate\Validation\ValidationException::withMessages(["team_members.{$index}.id" => ['Invalid employee.']]);
                     }
                     // Rotation guard: employees cannot be on two projects at once
-                    if ($member['type'] === 'employee') {
-                        $occupied = ProjectTeam::occupied()
-                            ->where('employee_id', $member['id'])
-                            ->exists();
-                        if ($occupied) {
-                            throw \Illuminate\Validation\ValidationException::withMessages([
-                                "team_members.{$index}.id" => ['This employee already has an active project assignment.'],
-                            ]);
-                        }
-                    }
+                    // if ($member['type'] === 'employee') {
+                    //     $occupied = ProjectTeam::occupied()
+                    //         ->where('employee_id', $member['id'])
+                    //         ->exists();
+                    //     if ($occupied) {
+                    //         throw \Illuminate\Validation\ValidationException::withMessages([
+                    //             "team_members.{$index}.id" => ['This employee already has an active project assignment.'],
+                    //         ]);
+                    //     }
+                    // }
                 }
                 foreach ($validated['team_members'] as $member) {
                     ProjectTeam::create([
@@ -515,6 +522,7 @@ class ProjectsController extends Controller
 
         if ($hasBillings) {
             $validated['contract_amount'] = $project->contract_amount;
+            $validated['billing_type']    = $project->billing_type;
         }
 
         $project->update($validated);

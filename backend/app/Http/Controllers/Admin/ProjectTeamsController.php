@@ -79,16 +79,16 @@ class ProjectTeamsController extends Controller
 
         foreach ($validated['assignables'] as $index => $assignable) {
             // ── Occupation guard (employees only) ─────────────────────────────
-            if ($assignable['type'] === 'employee') {
-                $occupiedIds = ProjectTeam::fullyOccupiedEmployeeIds();
-                if (in_array($assignable['id'], $occupiedIds)) {
-                    $name = $this->resolveAssignableName($assignable);
-                    return redirect()->back()->withErrors([
-                        "assignables.{$index}.id" =>
-                            "{$name} is currently active on another project. Release them first before assigning here.",
-                    ])->withInput();
-                }
-            }
+            // if ($assignable['type'] === 'employee') {
+            //     $occupiedIds = ProjectTeam::fullyOccupiedEmployeeIds();
+            //     if (in_array($assignable['id'], $occupiedIds)) {
+            //         $name = $this->resolveAssignableName($assignable);
+            //         return redirect()->back()->withErrors([
+            //             "assignables.{$index}.id" =>
+            //                 "{$name} is currently active on another project. Release them first before assigning here.",
+            //         ])->withInput();
+            //     }
+            // }
 
             // Skip duplicate — only if there's already an ACTIVE assignment for this person on this project
             $exists = ProjectTeam::where('project_id', $project->id)
@@ -192,22 +192,22 @@ class ProjectTeamsController extends Controller
         }
 
         // If re-activating, check no other active assignment
-        if (
-            isset($validated['assignment_status'])
-            && $validated['assignment_status'] === AssignmentStatus::Active->value
-            && $projectTeam->assignable_type === 'employee'
-        ) {
-            $conflict = ProjectTeam::where('employee_id', $projectTeam->employee_id)
-                ->where('assignment_status', AssignmentStatus::Active->value)
-                ->where('id', '!=', $projectTeam->id)
-                ->exists();
+        // if (
+        //     isset($validated['assignment_status'])
+        //     && $validated['assignment_status'] === AssignmentStatus::Active->value
+        //     && $projectTeam->assignable_type === 'employee'
+        // ) {
+        //     $conflict = ProjectTeam::where('employee_id', $projectTeam->employee_id)
+        //         ->where('assignment_status', AssignmentStatus::Active->value)
+        //         ->where('id', '!=', $projectTeam->id)
+        //         ->exists();
 
-            if ($conflict) {
-                return redirect()->back()->withErrors([
-                    'assignment_status' => "{$projectTeam->assignable_name} already has an active assignment on another project.",
-                ])->withInput();
-            }
-        }
+        //     if ($conflict) {
+        //         return redirect()->back()->withErrors([
+        //             'assignment_status' => "{$projectTeam->assignable_name} already has an active assignment on another project.",
+        //         ])->withInput();
+        //     }
+        // }
 
         $old = [
             'role'   => $projectTeam->role,
@@ -238,6 +238,46 @@ class ProjectTeamsController extends Controller
         return redirect()->back()->with('success', 'Team member updated successfully.');
     }
 
+    // ─── Bulk Status Update (release / reactivate) ───────────────────────────
+
+    public function bulkStatus(Request $request, Project $project)
+    {
+        $request->validate([
+            'ids'               => 'required|array|min:1',
+            'ids.*'             => 'integer|exists:project_teams,id',
+            'assignment_status' => ['required', 'string', 'in:' . implode(',', AssignmentStatus::values())],
+        ]);
+
+        $newStatus = AssignmentStatus::from($request->assignment_status);
+
+        $teams = ProjectTeam::where('project_id', $project->id)
+            ->whereIn('id', $request->ids)
+            ->get();
+
+        foreach ($teams as $team) {
+            $updateData = ['assignment_status' => $newStatus->value];
+            if ($newStatus === AssignmentStatus::Released) {
+                $updateData['released_at'] = now();
+                if ($team->user_id) {
+                    ProjectTask::where('assigned_to', $team->user_id)
+                        ->whereHas('milestone', fn ($q) => $q->where('project_id', $project->id))
+                        ->update(['assigned_to' => null]);
+                }
+            } elseif ($newStatus === AssignmentStatus::Active) {
+                $updateData['reactivated_at'] = now();
+            }
+            $team->update($updateData);
+        }
+
+        $this->adminActivityLogs('Project Team', 'Bulk Status',
+            "Bulk updated {$teams->count()} member(s) to {$newStatus->label()} in Project {$project->project_name}"
+        );
+
+        return redirect()->back()->with('success',
+            "{$teams->count()} member(s) updated to {$newStatus->label()} successfully."
+        );
+    }
+
     // ─── Handle Status (toggle active ↔ released) ────────────────────────────
 
     public function handleStatus(Request $request, Project $project, ProjectTeam $projectTeam)
@@ -253,18 +293,18 @@ class ProjectTeamsController extends Controller
         $newStatus = AssignmentStatus::from($request->assignment_status);
 
         // Re-activating an employee — check for conflicts
-        if ($newStatus === AssignmentStatus::Active && $projectTeam->assignable_type === 'employee') {
-            $conflict = ProjectTeam::where('employee_id', $projectTeam->employee_id)
-                ->where('assignment_status', AssignmentStatus::Active->value)
-                ->where('id', '!=', $projectTeam->id)
-                ->exists();
+        // if ($newStatus === AssignmentStatus::Active && $projectTeam->assignable_type === 'employee') {
+        //     $conflict = ProjectTeam::where('employee_id', $projectTeam->employee_id)
+        //         ->where('assignment_status', AssignmentStatus::Active->value)
+        //         ->where('id', '!=', $projectTeam->id)
+        //         ->exists();
 
-            if ($conflict) {
-                return redirect()->back()->with('error',
-                    "{$projectTeam->assignable_name} already has an active assignment on another project. Release them there first."
-                );
-            }
-        }
+        //     if ($conflict) {
+        //         return redirect()->back()->with('error',
+        //             "{$projectTeam->assignable_name} already has an active assignment on another project. Release them there first."
+        //         );
+        //     }
+        // }
 
         $oldLabel = $projectTeam->assignment_status instanceof \BackedEnum
             ? $projectTeam->assignment_status->label()
@@ -335,9 +375,39 @@ class ProjectTeamsController extends Controller
 
     // ─── Force Remove (permanent delete) ─────────────────────────────────────
 
-    public function forceRemove(Request $request, Project $project, ProjectTeam $projectTeam)
+    public function forceRemove(Request $request, Project $project, ProjectTeam $projectTeam = null)
     {
-        if ($projectTeam->project_id !== $project->id) {
+        // Bulk force-remove
+        if ($request->has('ids') && is_array($request->ids)) {
+            $validated = $request->validate([
+                'ids'   => 'required|array|min:1',
+                'ids.*' => 'integer|exists:project_teams,id',
+            ]);
+
+            $teams = ProjectTeam::where('project_id', $project->id)
+                ->whereIn('id', $validated['ids'])
+                ->get();
+
+            foreach ($teams as $team) {
+                if ($team->user_id) {
+                    ProjectTask::where('assigned_to', $team->user_id)
+                        ->whereHas('milestone', fn ($q) => $q->where('project_id', $project->id))
+                        ->update(['assigned_to' => null]);
+                }
+                $team->forceDelete();
+            }
+
+            $this->adminActivityLogs('Project Team', 'Remove',
+                "Permanently removed {$teams->count()} member(s) from Project {$project->project_name}"
+            );
+
+            return redirect()->back()->with('success',
+                "{$teams->count()} team member(s) permanently removed from the project."
+            );
+        }
+
+        // Single force-remove
+        if (!$projectTeam || $projectTeam->project_id !== $project->id) {
             abort(404);
         }
 

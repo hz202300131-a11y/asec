@@ -31,7 +31,7 @@ class BillingService
             'project:id,project_code,project_name,client_id',
             'project.client:id,client_name',
             'milestone:id,name',
-            'createdBy:id,name'
+            'createdBy:id,first_name,middle_name,last_name'
         ])
             ->withCount('payments')
             ->whereNull('archived_at')
@@ -189,7 +189,7 @@ class BillingService
                     $q->select('id', 'project_code', 'project_name');
                 },
                 'createdBy' => function ($q) {
-                    $q->select('id', 'name');
+                    $q->select('id', 'first_name', 'middle_name', 'last_name');
                 },
             ]);
 
@@ -250,8 +250,10 @@ class BillingService
                 // Ensure createdBy relationship exists
                 if (!$transaction->createdBy) {
                     $transaction->createdBy = (object)[
-                        'id' => null,
-                        'name' => 'System',
+                        'id'         => null,
+                        'first_name' => 'System',
+                        'middle_name'=> null,
+                        'last_name'  => null,
                     ];
                 }
                 

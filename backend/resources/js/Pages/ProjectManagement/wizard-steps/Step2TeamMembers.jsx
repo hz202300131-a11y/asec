@@ -78,12 +78,12 @@ const getDatePresets = (projectStartDate, projectEndDate) => {
 };
 
 // ─── Time Slot Presets ─────────────────────────────────────────────────────────
-const TIME_SLOTS = [
-  { id: "morning", label: "Morning", time: "08:00–12:00", icon: SunMedium, color: "amber" },
-  { id: "afternoon", label: "Afternoon", time: "13:00–17:00", icon: Sunset, color: "orange" },
-  { id: "evening", label: "Evening", time: "18:00–22:00", icon: Moon, color: "indigo" },
-  { id: "fullday", label: "Full Day", time: "08:00–17:00", icon: Calendar, color: "green" },
-];
+// const TIME_SLOTS = [
+//   { id: "morning", label: "Morning", time: "08:00–12:00", icon: SunMedium, color: "amber" },
+//   { id: "afternoon", label: "Afternoon", time: "13:00–17:00", icon: Sunset, color: "orange" },
+//   { id: "evening", label: "Evening", time: "18:00–22:00", icon: Moon, color: "indigo" },
+//   { id: "fullday", label: "Full Day", time: "08:00–17:00", icon: Calendar, color: "green" },
+// ];
 
 // ─── Color map ─────────────────────────────────────────────────────────────────
 const COLOR = {
@@ -322,7 +322,7 @@ function MemberCard({ member, isSelected, compositeId, onToggle, formData, error
           </div>
 
           {/* Work Hours / Time Slot */}
-          <div>
+          {/* <div>
             <label className="text-xs font-semibold text-gray-700 mb-2 block flex items-center gap-1.5">
               <Clock size={12} className="text-indigo-500" />
               Work Shift
@@ -350,7 +350,7 @@ function MemberCard({ member, isSelected, compositeId, onToggle, formData, error
                 );
               })}
             </div>
-          </div>
+          </div> */}
         </div>
       )}
     </div>
@@ -383,7 +383,7 @@ function BulkPresetBar({ selectedIds, onApplyAll, projectData }) {
         ))}
       </div>
       <div className="ml-auto flex gap-1.5">
-        {TIME_SLOTS.map((slot) => (
+        {/* {TIME_SLOTS.map((slot) => (
           <button
             key={slot.id}
             type="button"
@@ -393,7 +393,7 @@ function BulkPresetBar({ selectedIds, onApplyAll, projectData }) {
           >
             <Clock size={11} /> {slot.label}
           </button>
-        ))}
+        ))} */}
       </div>
     </div>
   );
@@ -579,14 +579,14 @@ export default function Step2TeamMembers({ users }) {
       )}
 
       {/* ── Rotation Notice ── */}
-      <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-800">
+      {/* <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-xs text-amber-800">
         <AlertCircle size={14} className="flex-shrink-0 mt-0.5 text-amber-500" />
         <span>
           <strong>Employees</strong> follow a single-assignment rule — only one active project at a time. Use{" "}
           <strong>Work Shift</strong> to enable partial-day rotation (e.g. 8am–12pm on Project A, 1pm–5pm on Project B).{" "}
           <strong>Users/contractors</strong> can be on multiple projects simultaneously.
         </span>
-      </div>
+      </div> */}
 
       {/* ── Search + Filter Row ── */}
       <div className="flex gap-2 flex-wrap items-center">
